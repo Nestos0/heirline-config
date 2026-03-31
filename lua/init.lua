@@ -26,21 +26,6 @@ local function is_repeated(name)
 	return count > 1
 end
 
-local function get_tab_bufs(tabnr)
-	local set = {}
-	local tab_handle = vim.api.nvim_list_tabpages()[tabnr]
-	if not tab_handle then
-		return set
-	end
-	for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab_handle)) do
-		local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
-		if ok then
-			set[buf] = true
-		end
-	end
-	return set
-end
-
 local conditions = require("heirline.conditions")
 local utils = require("heirline.utils")
 
@@ -103,7 +88,7 @@ local ViModeIcon = {
 	init = function(self)
 		self.mode = vim.fn.mode(1)
 	end,
-	provider = "  ",
+	provider = "  ",
 	hl = function(self)
 		local mode = self.mode:sub(1, 1)
 		return { fg = mode_colors[mode] or colors.red, bold = true }
@@ -179,7 +164,7 @@ local Progress = { provider = "%P ", hl = { fg = "fg", bold = true } }
 
 local Diagnostics = {
 	condition = conditions.has_diagnostics,
-	static = { error_icon = " ", warn_icon = " ", info_icon = " " },
+	static = { error_icon = " ", warn_icon = " ", info_icon = " " },
 	init = function(self)
 		self.errors = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.ERROR })
 		self.warnings = #vim.diagnostic.get(0, { severity = vim.diagnostic.severity.WARN })
@@ -236,7 +221,7 @@ local LSPActive = {
 		if self.tailwind then
 			return self.name .. " "
 		end
-		return " LSP: " .. self.name .. " "
+		return " LSP: " .. self.name .. " "
 	end,
 	hl = function(self)
 		if self.tailwind then
@@ -271,7 +256,7 @@ local GitBranch = {
 	end,
 	update = { "User", pattern = "GitSignsUpdate" },
 	provider = function(self)
-		return " " .. (self.status_dict.head or "") .. " "
+		return " " .. (self.status_dict.head or "") .. " "
 	end,
 	hl = { fg = "violet", bold = true },
 }
@@ -287,7 +272,7 @@ local Diff = {
 	{
 		provider = function(self)
 			local count = self.status_dict.added or 0
-			return count > 0 and (" " .. count .. " ") or ""
+			return count > 0 and (" " .. count .. " ") or ""
 		end,
 		hl = { fg = "green" },
 	},
@@ -301,7 +286,7 @@ local Diff = {
 	{
 		provider = function(self)
 			local count = self.status_dict.removed or 0
-			return count > 0 and (" " .. count .. " ") or ""
+			return count > 0 and (" " .. count .. " ") or ""
 		end,
 		hl = { fg = "red" },
 	},
@@ -328,89 +313,52 @@ local StatusLine = {
 }
 
 local EvilLogo = {
-	provider = "  ",
+	provider = "  ",
 	hl = { fg = "green", bold = true, bg = "bg" },
 }
 
--- Tab 指示器：仅在 tab 数量大于 1 时显示
--- 样式：  Tab 2/3  （图标 + 当前/总数）
-local TabIndicator = {
-	condition = function()
-		return #vim.api.nvim_list_tabpages() > 1
-	end,
-	update = { "TabEnter", "TabLeave", "TabNew", "TabClosed" },
-	init = function(self)
-		self.cur = vim.api.nvim_tabpage_get_number(vim.api.nvim_get_current_tabpage())
-		self.total = #vim.api.nvim_list_tabpages()
-	end,
-	-- 左分隔
-	{ provider = " ", hl = { fg = "dim" } },
-	-- 图标
-	{ provider = " ", hl = { fg = "blue", bold = true } },
-	-- 当前 tab 编号，高亮
-	{
-		provider = function(self)
-			return tostring(self.cur)
-		end,
-		hl = { fg = "yellow", bold = true },
-	},
-	-- 分隔符
-	{ provider = "/", hl = { fg = "dim" } },
-	-- 总 tab 数
-	{
-		provider = function(self)
-			return tostring(self.total)
-		end,
-		hl = { fg = "fg" },
-	},
-	-- 右空格
-	{ provider = " ", hl = { fg = "dim" } },
-}
-
--- Tab-aware BufferComponent：
---   · 显示当前 tab 的 buffer（在该 tab 的任意 window 中打开过的）
---   · 若同一 buffer 存在于多个 tab，用不同颜色的前缀 dot 加以区分
 local BufferComponent = {
 	init = function(self)
 		self.is_active = self.bufnr == vim.api.nvim_get_current_buf()
 		local name = vim.api.nvim_buf_get_name(self.bufnr or 0)
 		self.buf_name = name and name or "[No Name]"
-
-		-- 检查该 buffer 是否存在于其他 tab
-		local cur_tab = vim.api.nvim_get_current_tabpage()
-		self.in_other_tab = false
-		for _, tab in ipairs(vim.api.nvim_list_tabpages()) do
-			if tab ~= cur_tab then
-				for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
-					local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
-					if ok and buf == self.bufnr then
-						self.in_other_tab = true
-						break
-					end
-				end
-			end
-			if self.in_other_tab then
+		
+		-- 检查buffer是否在当前tab中可见
+		self.is_visible = false
+		local current_tab = vim.api.nvim_get_current_tabpage()
+		local wins = vim.api.nvim_tabpage_list_wins(current_tab)
+		for _, win in ipairs(wins) do
+			if vim.api.nvim_win_get_buf(win) == self.bufnr then
+				self.is_visible = true
 				break
 			end
 		end
 	end,
 	hl = function(self)
-		return {
-			fg = self.is_active and "fg" or "dim",
-			bg = self.is_active and "bg" or "tabline_bg",
-			bold = self.is_active,
-		}
+		if self.is_active then
+			-- 当前活跃buffer
+			return {
+				fg = "fg",
+				bg = "bg",
+				bold = true,
+			}
+		elseif self.is_visible then
+			-- 在当前tab中可见但非活跃的buffer
+			return {
+				fg = "dim",
+				bg = "tabline_bg",
+				bold = false,
+			}
+		else
+			-- 在其他tab中的buffer
+			return {
+				fg = "dim",
+				bg = "tabline_bg",
+				bold = false,
+			}
+		end
 	end,
 	{ provider = " " },
-	-- 共享 tab 指示 dot：若该 buffer 同时出现在其他 tab，显示橙色小点
-	{
-		provider = function(self)
-			return self.in_other_tab and "● " or ""
-		end,
-		hl = function(self)
-			return { fg = self.is_active and "orange" or "dim" }
-		end,
-	},
 	{
 		init = function(self)
 			local filename = self.buf_name
@@ -428,7 +376,7 @@ local BufferComponent = {
 	{
 		provider = function(self)
 			local filename = vim.fs.basename(self.buf_name)
-			if not filename or filename == "" then
+			if not filename then
 				filename = "[No Name]"
 			end
 			if is_repeated(filename) then
@@ -464,11 +412,11 @@ local FileFormatSymbol = {
 	provider = function()
 		local fmt = vim.bo.fileformat
 		if fmt == "unix" then
-			return " "
+			return " "
 		elseif fmt == "dos" then
-			return " "
+			return " "
 		elseif fmt == "mac" then
-			return " "
+			return " "
 		else
 			return "? "
 		end
@@ -483,42 +431,23 @@ local FileEncodingTab = {
 	hl = { fg = "fg" },
 }
 
--- Tab-aware buflist：只列出当前 tab 中各 window 打开的 buffer
-local function make_tab_aware_buflist()
-	-- 包装 make_buflist，传入经过 tab 过滤的 buffer 列表
-	return {
-		init = function(self)
-			-- 收集当前 tab 下所有 window 的 buffer（保持顺序、去重）
-			local cur_tab = vim.api.nvim_get_current_tabpage()
-			local seen = {}
-			local bufs = {}
-			for _, win in ipairs(vim.api.nvim_tabpage_list_wins(cur_tab)) do
-				local ok, buf = pcall(vim.api.nvim_win_get_buf, win)
-				if ok and vim.api.nvim_get_option_value("buflisted", { buf = buf }) and not seen[buf] then
-					seen[buf] = true
-					table.insert(bufs, buf)
-				end
-			end
-			-- 同时补充 buflisted 但未在当前 tab window 中显示的 buffer，
-			-- 让用户仍能感知它们（追加到末尾，视觉上稍暗即可）
-			for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-				if vim.api.nvim_get_option_value("buflisted", { buf = buf }) and not seen[buf] then
-					seen[buf] = true
-					table.insert(bufs, buf)
-				end
-			end
-			self.buffers = bufs
-		end,
-		update = { "BufEnter", "BufAdd", "BufDelete", "TabEnter", "TabLeave", "SessionLoadPost", "BufNew" },
-		utils.make_buflist(BufferComponent, LeftTrunc, RightTrunc),
-	}
-end
+local TabsIndicator = {
+	condition = function()
+		return #vim.api.nvim_list_tabpages() > 1
+	end,
+	provider = function()
+		local current = vim.api.nvim_tabpage_get_number(vim.api.nvim_get_current_tabpage())
+		local total = #vim.api.nvim_list_tabpages()
+		return string.format(" 󰓩 %d/%d ", current, total)
+	end,
+	hl = { fg = "green", bold = true, bg = "bg" },
+}
 
 local TabLine = {
 	EvilLogo,
-	TabIndicator,
+	TabsIndicator,
 	{ provider = "%=" },
-	make_tab_aware_buflist(),
+	utils.make_buflist(BufferComponent, LeftTrunc, RightTrunc),
 	{ provider = "%=" },
 	FileFormatSymbol,
 	{ provider = " " },
