@@ -1,29 +1,53 @@
-local function get_buf_names()
-	local tbl = {}
-	tbl = vim.tbl_filter(function(bufnr)
-		return vim.api.nvim_get_option_value("buflisted", { buf = bufnr })
-	end, vim.api.nvim_list_bufs())
-	local ret = {}
-	for _, id in ipairs(tbl) do
-		table.insert(ret, vim.api.nvim_buf_get_name(id))
-	end
-	return ret
-end
+local g_buf_names = {}
 
 local function is_repeated(name)
 	if name == "" or name == "[No Name]" then
 		return false
 	end
 
-	local count = 0
-
-	for _, buf_name in ipairs(get_buf_names()) do
-		if vim.fs.basename(buf_name) == name then
-			count = count + 1
+	local buf_names = {}
+	for path in pairs(g_buf_names) do
+		if vim.fs.basename(path) == name then
+			table.insert(buf_names, path)
 		end
 	end
 
-	return count > 1
+	if #buf_names <= 1 then
+		return false
+	end
+
+	local displays = {}
+	local parents = {}
+	for _, p in ipairs(buf_names) do
+		displays[p] = name
+		parents[p] = p
+	end
+
+	local not_repeated = false
+	while not not_repeated do
+		not_repeated = true
+		local counts = {}
+
+		for _, p in ipairs(buf_names) do
+			counts[displays[p]] = (counts[displays[p]] or 0) + 1
+		end
+
+		for _, p in ipairs(buf_names) do
+			if counts[displays[p]] > 1 then
+				local next_parent = vim.fs.dirname(parents[p])
+
+				parents[p] = next_parent
+				displays[p] = vim.fs.basename(next_parent) .. "/" .. displays[p]
+				not_repeated = false
+			end
+		end
+	end
+
+	for p, display in pairs(displays) do
+		g_buf_names[p] = display
+	end
+
+	return true
 end
 
 local conditions = require("heirline.conditions")
@@ -322,11 +346,10 @@ local BufferComponent = {
 		self.is_active = self.bufnr == vim.api.nvim_get_current_buf()
 		local name = vim.api.nvim_buf_get_name(self.bufnr or 0)
 		self.buf_name = name
-        if self.buf_name == "" then
-            self.buf_name = "[No Name]"
-        end
+		if self.buf_name == "" then
+			self.buf_name = "[No Name]"
+		end
 
-		-- 检查buffer是否在当前tab中可见
 		self.is_visible = false
 		local current_tab = vim.api.nvim_get_current_tabpage()
 		local wins = vim.api.nvim_tabpage_list_wins(current_tab)
@@ -379,16 +402,14 @@ local BufferComponent = {
 	{
 		provider = function(self)
 			local filename = vim.fs.basename(self.buf_name)
-			if not filename then
+			if filename == "" then
 				filename = "[No Name]"
 			end
 
-			while is_repeated(filename) do
-				local dir = vim.fs.basename(vim.fs.dirname(self.buf_name))
-				filename = dir .. "/" .. filename
-			end
+			g_buf_names[self.buf_name] = filename
+			is_repeated(filename)
 
-			return filename .. " "
+			return g_buf_names[self.buf_name] .. " "
 		end,
 	},
 	{
@@ -462,4 +483,3 @@ return {
 	statusline = StatusLine,
 	tabline = TabLine,
 }
-
