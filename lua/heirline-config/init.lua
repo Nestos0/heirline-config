@@ -5,46 +5,23 @@ local function is_repeated(name)
 		return false
 	end
 
-	local buf_names = {}
-	for path in pairs(g_buf_names) do
-		if vim.fs.basename(path) == name then
-			table.insert(buf_names, path)
+	local count = 0
+	for _, p in pairs(g_buf_names) do
+		if p == name then
+			count = count + 1
 		end
 	end
 
-	if #buf_names <= 1 then
+	if count <= 1 then
 		return false
 	end
 
-	local displays = {}
-	local parents = {}
-	for _, p in ipairs(buf_names) do
-		displays[p] = name
-		parents[p] = p
-	end
-
-	local not_repeated = false
-	while not not_repeated do
-		not_repeated = true
-		local counts = {}
-
-		for _, p in ipairs(buf_names) do
-			counts[displays[p]] = (counts[displays[p]] or 0) + 1
+	for v, buf_name in pairs(g_buf_names) do
+		if buf_name == name then
+			local head = v:sub(1, -(#buf_name + 2))
+			local parent_node = vim.fs.basename(head)
+			g_buf_names[v] = parent_node .. "/" .. buf_name
 		end
-
-		for _, p in ipairs(buf_names) do
-			if counts[displays[p]] > 1 then
-				local next_parent = vim.fs.dirname(parents[p])
-
-				parents[p] = next_parent
-				displays[p] = vim.fs.basename(next_parent) .. "/" .. displays[p]
-				not_repeated = false
-			end
-		end
-	end
-
-	for p, display in pairs(displays) do
-		g_buf_names[p] = display
 	end
 
 	return true
@@ -406,8 +383,10 @@ local BufferComponent = {
 				filename = "[No Name]"
 			end
 
-			g_buf_names[self.buf_name] = filename
-			is_repeated(filename)
+			if not g_buf_names[self.buf_name] then
+				g_buf_names[self.buf_name] = filename
+			end
+			is_repeated(g_buf_names[self.buf_name])
 
 			return g_buf_names[self.buf_name] .. " "
 		end,
