@@ -11,7 +11,7 @@ local function get_buf_names()
 end
 
 local function is_repeated(name)
-	if name == "" then
+	if name == "" or name == "[No Name]" then
 		return false
 	end
 
@@ -321,8 +321,11 @@ local BufferComponent = {
 	init = function(self)
 		self.is_active = self.bufnr == vim.api.nvim_get_current_buf()
 		local name = vim.api.nvim_buf_get_name(self.bufnr or 0)
-		self.buf_name = name and name or "[No Name]"
-		
+		self.buf_name = name
+        if self.buf_name == "" then
+            self.buf_name = "[No Name]"
+        end
+
 		-- 检查buffer是否在当前tab中可见
 		self.is_visible = false
 		local current_tab = vim.api.nvim_get_current_tabpage()
@@ -351,11 +354,11 @@ local BufferComponent = {
 			}
 		else
 			-- 在其他tab中的buffer
-			return {
-				fg = "dim",
-				bg = "tabline_bg",
-				bold = false,
-			}
+			-- return {
+			-- 	fg = "dim",
+			-- 	bg = "tabline_bg",
+			-- 	bold = false,
+			-- }
 		end
 	end,
 	{ provider = " " },
@@ -379,9 +382,10 @@ local BufferComponent = {
 			if not filename then
 				filename = "[No Name]"
 			end
-			if is_repeated(filename) then
+
+			while is_repeated(filename) do
 				local dir = vim.fs.basename(vim.fs.dirname(self.buf_name))
-				return dir .. "/" .. filename .. " "
+				filename = dir .. "/" .. filename
 			end
 
 			return filename .. " "
@@ -458,3 +462,4 @@ return {
 	statusline = StatusLine,
 	tabline = TabLine,
 }
+
